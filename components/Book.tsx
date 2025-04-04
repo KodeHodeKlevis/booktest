@@ -7,9 +7,11 @@ import { useState, useCallback } from 'react'
 // Each page object contains the left and right content of a 2-page spread.
 const pages = [
   { left: '📖 Cover', right: '📝 Introduction' },
+  { left: '📝 Introduction', right: '📚 Chapter 1' },
   { left: '📚 Chapter 1', right: '✍️ Page 1 Content' },
+  { left: '📚 Chapter 1', right: '📚 Chapter 2' },
   { left: '📚 Chapter 2', right: '✍️ Page 2 Content' },
-  { left: '🏁 The End', right: '🔙 Back Cover' },
+  { left: '✍️ Page 2 Content', right: '🏁 The End' },
 ]
 
 // Render a background stack of "fake" pages to simulate depth behind the active pages.
