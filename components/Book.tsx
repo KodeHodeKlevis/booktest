@@ -1,10 +1,10 @@
 'use client'
 
-import { motion, useMotionValue, useTransform, useAnimation, PanInfo } from 'framer-motion'
-import { useState, useCallback } from 'react'
+import { motion, useMotionValue, useTransform, useAnimation, PanInfo, animate } from 'framer-motion'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import FlipPage from './FlipPage'
 
-// Define the pages of the book.
-// Each page object contains the left and right content of a 2-page spread.
+// Book pages
 const pages = [
   { left: '📖 Cover', right: '📝 Introduction' },
   { left: '📝 Introduction', right: '📚 Chapter 1' },
@@ -14,7 +14,10 @@ const pages = [
   { left: '✍️ Page 2 Content', right: '🏁 The End' },
 ]
 
-// Render a background stack of "fake" pages to simulate depth behind the active pages.
+// Helper to safely access page index
+const safeIndex = (i: number) => Math.min(Math.max(i, 0), pages.length - 1)
+
+// Background page stack
 const PageStack = () => (
   [...Array(5)].map((_, i) => (
     <div
@@ -28,9 +31,9 @@ const PageStack = () => (
   ))
 )
 
-// Optional opening animation: flips 6 pages at start when book is opened.
+// Opening animation
 const OpeningAnimation = ({ controls }: { controls: any }) => (
-  [...Array(6)].map((_, i) => (
+  [...Array(9)].map((_, i) => (
     <motion.div
       key={i}
       custom={i}
@@ -42,111 +45,53 @@ const OpeningAnimation = ({ controls }: { controls: any }) => (
   ))
 )
 
-// The main interactive flipping page (for both forward and backward).
-const FlipPage = ({
-  direction,            // 'forward' or 'backward'
-  motionValue,          // rotateY motion value controlled by drag
-  boxShadow,            // dynamic shadow while dragging
-  onDrag, onDragEnd, onDragStart,
-  content,              // The text content shown on the flipping page
-  isActive,             // Is this the currently flipping page?
-  peelVisible,          // Controls whether the peel effect should show
-  peelSize,             // Peel effect animated size
-}: any) => {
-  const isForward = direction === 'forward'
-
-  return (
-    <motion.div
-      drag="x"
-      onDrag={onDrag}
-      onDragEnd={onDragEnd}
-      onDragStart={onDragStart}
-      onHoverStart={() => isForward && peelVisible.set(true)}
-      onHoverEnd={() => isForward && peelVisible.set(false)}
-      className={`absolute ${isForward ? 'left-1/2 origin-left' : 'left-0 origin-right'} w-1/2 h-full ${isActive ? 'z-[50]' : 'z-10'}`}
-      style={{
-        rotateY: motionValue,
-        transformStyle: 'preserve-3d',
-        transformOrigin: isForward ? 'left center' : 'right center',
-        boxShadow,
-      }}
-      dragConstraints={{ left: 0, right: 0 }}
-      dragElastic={0} // disables elastic pull
-      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-    >
-      {/* Page visual appearance while flipping */}
-      <div className="absolute inset-0 bg-[url('/paper-texture.png')] bg-cover bg-repeat p-8 bg-[#f9f0db]">
-        <p className="text-3xl font-bold text-gray-800">{content}</p>
-
-        {/* Peel corner animation (only shown when flipping forward) */}
-        {isForward && (
-          <motion.div
-            className="absolute bottom-0 right-0 bg-[#d6c7aa] rounded-tl-full"
-            animate={{
-              width: peelVisible.value ? '60px' : '0px',
-              height: peelVisible.value ? '60px' : '0px',
-            }}
-            transition={{ duration: 0.3 }}
-            style={{ width: peelSize, height: peelSize }}
-          />
-        )}
-      </div>
-    </motion.div>
-  )
-}
-
 export default function Book() {
-  // Tracks the currently visible page index
   const [pageIndex, setPageIndex] = useState(0)
-
-  // Controls whether the book has been opened (can be used for intro animations)
   const [isOpen, setIsOpen] = useState(false)
-
-  // Tracks if a page is currently being flipped and in which direction
   const [flipping, setFlipping] = useState<'forward' | 'backward' | null>(null)
-
-  // Controls the corner peel animation
   const [peelVisible, setPeelVisible] = useState(false)
 
-  // Motion values that rotate the page being flipped
   const forwardY = useMotionValue(0)
   const backwardY = useMotionValue(0)
-
-  // Motion value for dynamic shadow during page flip
   const shadow = useMotionValue(0)
 
-  // Converts rotation angle into peel size (makes peel scale with flip)
   const peelSize = useTransform(forwardY, [-180, 0, 180], ['50px', '0px', '50px'])
-
-  // Shadow effect based on drag progress
   const boxShadow = useTransform(shadow, [0, 0.7], [
     'inset 5px 0px 10px rgba(0,0,0,0.1)',
     '15px 10px 40px rgba(0,0,0,0.3)',
   ])
 
-  // Get current, previous and next page content
-  const current = pages[pageIndex]
-  const next = pages[Math.min(pageIndex + 1, pages.length - 1)]
-  const prev = pages[Math.max(pageIndex - 1, 0)]
+  const current = pages[safeIndex(pageIndex)]
+  const next = pages[safeIndex(pageIndex + 1)]
+  const prev = pages[safeIndex(pageIndex - 1)]
 
-  // Controls for animations (used during book opening)
   const coverControls = useAnimation()
   const pagesControls = useAnimation()
 
-  // Play page-flip sound effect
-  const playFlip = () => {
-    const sound = new Audio('/page-flip.mp3')
-    sound.play()
-    setTimeout(() => sound.pause(), 300)
-  }
+  // 🔊 Flip sound (long whoosh style)
+  const flipSoundRef = useRef<HTMLAudioElement | null>(null)
 
-  // Called when user starts dragging a page
-  const handleStart = useCallback((direction: 'forward' | 'backward') => {
-    playFlip()
-    setFlipping(direction)
+  useEffect(() => {
+    const audio = new Audio('/page-flip.mp3')
+    audio.loop = false
+    audio.volume = 0.6
+    flipSoundRef.current = audio
   }, [])
 
-  // Called during drag — rotate the page based on drag distance
+  // 🟢 Flip start: play sound from beginning
+  const handleStart = useCallback((direction: 'forward' | 'backward') => {
+    if (flipping) return
+    setFlipping(direction)
+
+    const sound = flipSoundRef.current
+    if (sound) {
+      sound.currentTime = 0
+      sound.volume = 0.6
+      sound.play().catch(() => {})
+    }
+  }, [flipping])
+
+  // 🟡 During drag: update rotation + shadow
   const handleDrag = useCallback(
     (direction: 'forward' | 'backward') =>
       (_e: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
@@ -160,7 +105,7 @@ export default function Book() {
     [forwardY, backwardY, shadow]
   )
 
-  // Called when drag ends — either flip page or snap back
+  // 🔴 Flip end: fade out sound, update page index
   const handleEnd = useCallback(
     (direction: 'forward' | 'backward') =>
       (_e: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
@@ -171,70 +116,163 @@ export default function Book() {
 
         if (shouldFlip) {
           setTimeout(() => {
-            setPageIndex((prev) => prev + (direction === 'forward' ? 1 : -1))
-          }, 300) // wait for animation to complete
+            setPageIndex(prev => safeIndex(prev + (direction === 'forward' ? 1 : -1)))
+            setFlipping(null)
+          }, 300)
+        } else {
+          setFlipping(null)
         }
 
-        // Reset rotation and states
+        // 🔊 Fade out sound
+        const sound = flipSoundRef.current
+        if (sound) {
+          let fadeVolume = sound.volume
+          const fadeOut = setInterval(() => {
+            if (fadeVolume > 0.01) {
+              fadeVolume -= 0.05
+              sound.volume = Math.max(fadeVolume, 0)
+            } else {
+              clearInterval(fadeOut)
+              sound.pause()
+              sound.currentTime = 0
+              sound.volume = 0.6 // Reset for next flip
+            }
+          }, 30)
+        }
+
         forwardY.set(0)
         backwardY.set(0)
         shadow.set(0)
-        setFlipping(null)
+        setPeelVisible(false)
       },
     [pageIndex, forwardY, backwardY, shadow]
   )
 
-  // Opens the book with a multi-page animated intro
+  // 📖 Book open animation
   const handleOpen = () => {
     const sound = new Audio('/book-flip.mp3')
-    sound.play()
+    sound.play().catch(() => {})
     coverControls.start({ rotateY: -180, transition: { duration: 1.5, ease: 'easeInOut' } })
     pagesControls.start(i => ({
       rotateY: [-10, -180],
-      transition: { duration: 1, ease: 'easeInOut', delay: i * 0.1 },
+      transition: {
+        duration: 1,
+        ease: 'easeInOut',
+        delay: i * 0.15,
+      },
     }))
     setTimeout(() => setIsOpen(true), 1000)
   }
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isOpen) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          handleOpen()
+        }
+        return
+      }
+  
+      if (flipping) return
+  
+      if (e.key === 'ArrowLeft' && pageIndex < pages.length - 1) {
+        handleStart('forward')
+      
+        // Animate the motionValue like a drag
+        animate(forwardY, 180, {
+          duration: 0.5,
+          ease: 'easeInOut',
+          onUpdate: (v) => {
+            const progress = Math.abs(v) / 180
+            shadow.set(progress * 0.7)
+          },
+          onComplete: () => {
+            const fakePan: PanInfo = {
+              offset: { x: -120, y: 0 },
+              delta: { x: -120, y: 0 },
+              velocity: { x: -300, y: 0 },
+              point: { x: 0, y: 0 },
+            }
+            handleEnd('forward')(new MouseEvent('mouseup'), fakePan)
+          }
+        })
+      }
+      
+      if (e.key === 'ArrowRight' && pageIndex > 0) {
+        handleStart('backward')
+      
+        animate(backwardY, -180, {
+          duration: 0.5,
+          ease: 'easeInOut',
+          onUpdate: (v: number) => {
+            const progress = Math.abs(v) / 180
+            shadow.set(progress * 0.7)
+          },
+          onComplete: () => {
+            const fakePan: PanInfo = {
+              offset: { x: 120, y: 0 },
+              delta: { x: 120, y: 0 },
+              velocity: { x: 300, y: 0 },
+              point: { x: 0, y: 0 },
+            }
+            handleEnd('backward')(new MouseEvent('mouseup'), fakePan)
+          }
+        })        
+      }
+    }      
+  
+    // ✅ Attach the event listener
+    window.addEventListener('keydown', handleKeyDown)
+  
+    // ✅ Cleanup when unmounted
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, flipping, pageIndex, handleStart, handleEnd, handleOpen])
+  
+  
+
   return (
     <div className="flex items-center justify-center h-screen bg-[#2c3e50]">
       <div className="relative w-[740px] h-[540px] perspective-[2000px]">
-
-        {/* Book wrapper */}
         <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center z-10">
-          <motion.div
-            className="flex items-center justify-center h-full w-full rounded-xl shadow-2xl px-2 py-2 bg-[#5c4033] bg-[url('/leather-texture.png')] bg-cover"
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.6 }}
-          >
+        <motion.div
+          className="relative flex items-center justify-center h-full w-full rounded-xl shadow-2xl px-2 py-2 bg-[#5c4033] bg-[url('/leather-texture.png')] bg-cover"
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 0.6 }}
+        >
+          {/* 🔺 Top-left triangle */}
+          <div className="absolute top-0 left-0 w-0 h-0 border-l-[30px] border-l-yellow-400 border-b-[30px] border-b-transparent" />
+
+          {/* 🔺 Top-right triangle */}
+          <div className="absolute top-0 right-0 w-0 h-0 border-r-[30px] border-r-yellow-400 border-b-[30px] border-b-transparent" />
+
+          {/* 🔺 Bottom-left triangle */}
+          <div className="absolute bottom-0 left-0 w-0 h-0 border-l-[30px] border-l-yellow-400 border-t-[30px] border-t-transparent" />
+
+          {/* 🔺 Bottom-right triangle */}
+          <div className="absolute bottom-0 right-0 w-0 h-0 border-r-[30px] border-r-yellow-400 border-t-[30px] border-t-transparent" />
+
             <div className="relative w-[700px] h-[500px]">
-
-              {/* Book spine line */}
               <div className="absolute left-1/2 top-0 h-full w-[2px] bg-gray-400 z-0" />
-
               <div className="relative w-full h-full flex items-center justify-center">
                 <div className="relative w-full h-full flex bg-white rounded-lg overflow-hidden border border-gray-300">
-
-                  {/* Background layered pages */}
                   <PageStack />
 
-                  {/* Static left page */}
+                  {/* Left Page */}
                   <div className="w-1/2 p-8 border-r border-gray-300 bg-[#f1e7d0] bg-[url('/paper-texture.png')] bg-cover bg-repeat select-none z-10">
                     <p className="text-3xl font-bold text-gray-800">
-                      {flipping === 'backward' && pageIndex > 0
-                        ? prev.left
-                        : current.left}
+                      {flipping === 'backward' && pageIndex > 0 ? prev.left : current.left}
                     </p>
                   </div>
 
-                  {/* Static right page */}
+                  {/* Right Page */}
                   <div className="w-1/2 p-8 bg-[#f5ecd7] bg-[url('/paper-texture.png')] bg-cover bg-repeat select-none z-10">
                     <p className="text-3xl font-bold text-gray-800">{next.right}</p>
                   </div>
 
-                  {/* Page being flipped forward */}
-                  {pageIndex < pages.length - 1 && (
+                  {/* Forward Flip Page */}
+                  {isOpen && pageIndex < pages.length - 1 && (
                     <FlipPage
                       direction="forward"
                       motionValue={forwardY}
@@ -249,8 +287,8 @@ export default function Book() {
                     />
                   )}
 
-                  {/* Page being flipped backward */}
-                  {pageIndex > 0 && (
+                  {/* Backward Flip Page */}
+                  {isOpen && pageIndex > 0 && (
                     <FlipPage
                       direction="backward"
                       motionValue={backwardY}
@@ -270,10 +308,8 @@ export default function Book() {
           </motion.div>
         </div>
 
-        {/* Optional animated opening pages */}
         {!isOpen && <OpeningAnimation controls={pagesControls} />}
 
-        {/* Front cover animation (only shown before open) */}
         {!isOpen && (
           <motion.div
             animate={coverControls}
