@@ -1,9 +1,9 @@
-'use client'
-
-import dynamic from 'next/dynamic'
-
-const Book = dynamic(() => import('../components/Book'), { ssr: false })
+import Book from '@/components/Book';
 
 export default function Home() {
-  return <Book />
+  return (
+    <main className="min-h-screen">
+      <Book />
+    </main>
+  );
 }
